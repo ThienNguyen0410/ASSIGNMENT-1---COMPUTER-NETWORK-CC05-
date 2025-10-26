@@ -42,7 +42,7 @@ class Response():
     :attrs status_code (int): HTTP status code (e.g., 200, 404).
     :attrs headers (dict): dictionary of response headers.
     :attrs url (str): url of the response.
-    :attrsencoding (str): encoding used for decoding response content.
+    :attrs encoding (str): encoding used for decoding response content.
     :attrs history (list): list of previous Response objects (for redirects).
     :attrs reason (str): textual reason for the status code (e.g., "OK", "Not Found").
     :attrs cookies (CaseInsensitiveDict): response cookies.
@@ -159,13 +159,33 @@ class Response():
             elif sub_type == 'html':
                 base_dir = BASE_DIR+"www/"
             else:
-                handle_text_other(sub_type)
+                raise ValueError("Unsupported MIME type: {}".format(mime_type))
         elif main_type == 'image':
             base_dir = BASE_DIR+"static/"
             self.headers['Content-Type']='image/{}'.format(sub_type)
         elif main_type == 'application':
             base_dir = BASE_DIR+"apps/"
             self.headers['Content-Type']='application/{}'.format(sub_type)
+            if sub_type in ['json', 'zip', 'xml']:
+                pass
+            else:
+                raise ValueError("Unsupported MIME type: {}".format(mime_type))
+        elif main_type == 'video':
+            base_dir = BASE_DIR+"videos/"
+            self.headers['Content-Type']='video/{}'.format(sub_type)
+            if sub_type in ['mp4', 'mpeg']:
+                pass
+            else:
+                raise ValueError("Unsupported MIME type: {}".format(mime_type))
+        elif main_type == 'text':
+            base_dir = BASE_DIR+"static/"
+            self.headers['Content-Type']='text/{}'.format(sub_type)
+            if sub_type in ['csv', 'xml']:
+                pass
+            else:
+                raise ValueError("Unsupported MIME type: {}".format(mime_type))
+        else:
+            raise ValueError("Unsupported MIME type: {}".format(mime_type))
         #
         #  TODO: process other mime_type
         #        application/xml       
@@ -178,9 +198,6 @@ class Response():
         #        video/mpeg
         #        ...
         #
-        else:
-            raise ValueError("Invalid MEME type: main_type={} sub_type={}".format(main_type,sub_type))
-
         return base_dir
 
 
@@ -201,6 +218,13 @@ class Response():
             #  TODO: implement the step of fetch the object file
             #        store in the return value of content
             #
+        try:
+            with open(filepath, 'rb') as f:
+                content = f.read()
+        except FileNotFoundError:
+            content = b'404 Not Found'
+        except Exception as e:
+            content = b'500 Internal Server Error'
         return len(content), content
 
 
@@ -215,7 +239,6 @@ class Response():
         """
         reqhdr = request.headers
         rsphdr = self.headers
-
         #Build dynamic headers
         headers = {
                 "Accept": "{}".format(reqhdr.get("Accept", "application/json")),
@@ -236,12 +259,20 @@ class Response():
                 "Warning": "199 Miscellaneous warning",
                 "User-Agent": "{}".format(reqhdr.get("User-Agent", "Chrome/123.0.0.0")),
             }
-
+        self.auth = rsphdr.get("Authorization", "")
+        if not self._validate_auth(self.auth):
+            headers["WWW-Authenticate"] = 'Basic realm="Access to the site", charset="UTF-8"'
+            self.status_code = 401
+            self.reason = "Unauthorized"
         # Header text alignment
             #
             #  TODO: implement the header building to create formated
             #        header from the provied headers
             #
+        fmt_header = "HTTP/1.1 200 OK\r\n"
+        for key, val in headers.items():
+            fmt_header += "{}: {}\r\n".format(key, val)
+        fmt_header += "\r\n"
         #
         # TODO prepare the request authentication
         #
@@ -292,6 +323,14 @@ class Response():
         #
         # TODO: add support objects
         #
+        elif mime_type.startswith('image/'):
+            base_dir = self.prepare_content_type(mime_type = mime_type)
+        elif mime_type.startswith('application/'):
+            base_dir = self.prepare_content_type(mime_type = mime_type)
+        elif mime_type.startswith('video/'):
+            base_dir = self.prepare_content_type(mime_type = mime_type)
+        elif mime_type.startswith('text/'):
+            base_dir = self.prepare_content_type(mime_type = mime_type)
         else:
             return self.build_notfound()
 
@@ -299,6 +338,3 @@ class Response():
         self._header = self.build_response_header(request)
 
         return self._header + self._content
-    
-    def get_encoding_from_headers(header):
-        return
