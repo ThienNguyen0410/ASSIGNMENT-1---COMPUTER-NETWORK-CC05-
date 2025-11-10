@@ -23,6 +23,7 @@ Request and Response objects to handle client-server communication.
 from .request import Request
 from .response import Response
 from .dictionary import CaseInsensitiveDict
+import os
 
 class HttpAdapter:
     """
@@ -70,7 +71,7 @@ class HttpAdapter:
         self.port = port
         #: Connection
         self.conn = conn
-        #: Conndection address
+        #: Connection address
         self.connaddr = connaddr
         #: Routes
         self.routes = routes
@@ -78,6 +79,47 @@ class HttpAdapter:
         self.request = Request()
         #: Response
         self.response = Response()
+
+    def http_login(self, body):
+        #Body's form: username=admin&password=password
+        creds = {}
+        for pair in body.split("&"):
+            if "=" in pair:
+                key,value = pair.split("=", 1)
+                creds[key] = value
+
+        correct_username = creds.get("username", "")
+        correct_password = creds.get("password", "")
+
+        if correct_username == "admin" and correct_password == "password":
+         
+            body = (
+                "<html><head><title>Welcome</title></head>"
+                "<body><h1>Login successful!</h1>"
+                "<p>Welcome, admin!</p>"
+                "<a href='/index.html'>Go to index</a>"
+                "</body></html>"
+            )
+
+            headers = {
+            "Content-Type": "text/html; charset=utf-8",
+            "Set-Cookie": "auth=true; Path=/",
+            }
+            
+            return ("200 OK", headers, body)
+        
+        #Invalid authentication
+        body = (
+            "<html><head><title>Login Failed</title></head>"
+            "<body><h1>401 Unauthorized</h1>"
+            "<p>Invalid username or password</p>"
+            "<p><a href='/login.html'>Try again</a></p>"
+            "</body></html>"
+        )
+        headers = {"Content-Type" : "text/html; charset=utf-8"}
+        return ("401 Unauthorized", headers, body)
+
+  
 
     def handle_client(self, conn, addr, routes):
         """
@@ -101,45 +143,163 @@ class HttpAdapter:
         # Response handler
         resp = self.response
 
-        # Handle the request
-        msg = conn.recv(1024).decode()
-        req.prepare(msg, routes)
-
-        # Handle request hook
         try:
-            if req.hook:
-                print("[HttpAdapter] hook in route-path METHOD {} PATH {}".format(req.hook._route_path,req.hook._route_methods))
-                req.hook(headers = "bksysnet",body = "get in touch")
-                #
-                # TODO: handle for App hook here
-                #
-                result = req.hook (
-                    method = req.method,
-                    body = req.body,
-                    header = req.headers,
-                    path= req.path
-                )
+            raw_req = conn.recv(4096).decode("utf-8", errors = "ignore")
+            if not raw_req:
+                conn.close()
+                return
+            
+            req.prepare(raw_req, routes)
 
-                if result:
-                    resp.body = str(req.body).encode("utf-8")
-                    resp.status_code = 200
-                
+            status = ""
+            body = ""
+            headers = {}
+
+            #Task 1A: Handle login
+            if req.method == "POST" and req.path == "/login":
+                status, headers, body = self.http_login(req.body)
+            #Task 1B: Hanle login
+            elif req.method == "GET":
+                if req.path == "/":
+                    req.path = "/index.html"
+            
+                auth =  req.cookies.get("auth")
+
+                if req.path in ("/", "/index.html") and auth != "true":
+                    status = "401 Unauthorized"
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                    body = (
+                            "<html><head><title>401</title></head>"
+                            "<body><h1>401 Unauthorized</h1>"
+                            "<p>Please <a href='/login.html'>login</a> first</p>"
+                            "</body></html>"
+                        )
+                else:
+                    base_dir = os.getcwd()
+                    if req.path.startswith("/static/"):
+                        filepath = os.path.join(base_dir, req.path.lstrip("/"))
+                    else:
+                        filepath = os.path.join(base_dir, "www", req.path.lstrip("/"))
+
+                        # Nếu file tồn tại
+                    if os.path.exists(filepath) and os.path.isfile(filepath):
+                            with open(filepath, "rb") as f:
+                                body = f.read()
+                            status = "200 OK"
+
+                            # Đoán content-type cơ bản
+                            if filepath.endswith(".html"):
+                                content_type = "text/html; charset=utf-8"
+                            elif filepath.endswith(".css"):
+                                content_type = "text/css"
+                            elif filepath.endswith(".js"):
+                                content_type = "application/javascript"
+                            elif filepath.endswith((".jpg", ".jpeg")):
+                                content_type = "image/jpeg"
+                            elif filepath.endswith(".png"):
+                                content_type = "image/png"
+                            elif filepath.endswith(".ico"):
+                                content_type = "image/x-icon"
+                            else:
+                                content_type = "application/octet-stream"
+
+                            headers = {"Content-Type": content_type}
+
+                    else:
+                        # File không tồn tại
+                        status = "404 Not Found"
+                        headers = {"Content-Type": "text/html; charset=utf-8"}
+                        body = (
+                            "<html><head><title>404</title></head>"
+                            "<body><h1>404 Not Found</h1>"
+                            "<p>The requested page could not be found.</p>"
+                            "</body></html>"
+                        )
+                        print("PATH: " + str(filepath))
+            if hasattr(req,"hook") and req.hook:
+                status, headers, body_bytes = self.handle_weaprous(req, resp)
+                body = body_bytes  # Replace body with hook result
+        #Graph into a http response
+            if isinstance(body, str):
+                body_bytes = body.encode("utf-8")
             else:
-                resp.body = b"404 not found"
-                resp.status_code = 404
+                body_bytes = body
 
+            response_data = (
+                f"HTTP/1.1 {status}\r\n"
+                + "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+                + "\r\n"
+            ).encode("utf-8") + body_bytes
+
+            conn.sendall(response_data)
         except Exception as e:
-            print(f"Error in httpadapter {e}")
-            resp.body = f"Internal Server Error: {e}".encode("utf-8")
-            resp.status_code = 500
+            err_body = f"<h1>500 Internal Server Error</h1><p>{e}</p>"
+            conn.sendall(
+                b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n"
+                + err_body.encode("utf-8")
+            )
+        finally:
+            conn.close()
 
 
-        # Build response
-        response = resp.build_response(req)
+        #End of task 1: HTTP server with cookie session
 
-        #print(response)
-        conn.sendall(response)
-        conn.close()
+    """-------------------------------------------------------------------------------------------"""
+        #Start task 2: Implement hybrid chat application
+    def handle_weaprous(self, req, resp):
+        """
+        Handle WeApRous-style route hooks.
+        This allows returning JSON responses from hooks like login.
+        """ 
+        import json
+
+        def to_bytes(payload, current_ct=None):
+            """Convert payload to bytes and set content-type if needed."""
+            if isinstance(payload, (bytes, bytearray)):
+                return bytes(payload), current_ct
+            if payload is None:
+                return b'{"status":"success"}', "application/json; charset=utf-8"
+            if isinstance(payload, (dict, list)):
+                return json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8"
+            if isinstance(payload, str):
+                return payload.encode("utf-8"), current_ct or "text/plain; charset=utf-8"
+            return str(payload).encode("utf-8"), current_ct or "text/plain; charset=utf-8"
+
+        try:
+            body_text = req.body.decode("utf-8") if isinstance(req.body, (bytes, bytearray)) else (req.body or "")
+            result = req.hook(headers=req.headers, body=body_text)
+
+                # Nếu hook trả về tuple (status, headers, payload)
+            if isinstance(result, tuple) and len(result) == 3:
+                status, headers, payload = result
+                headers = dict(headers or {})
+                payload_bytes, ct = to_bytes(payload, headers.get("Content-Type"))
+                headers.setdefault("Content-Type", ct)
+                headers.setdefault("Access-Control-Allow-Origin", "*")
+                return status, headers, payload_bytes
+
+                # Nếu hook trả về dict/list/str/None
+            payload_bytes, ct = to_bytes(result)
+            headers = {
+                    "Content-Type": ct,
+                    "Access-Control-Allow-Origin": "*",
+                }
+            return "200 OK", headers, payload_bytes
+
+        except Exception as ex:
+            err = {"status": "error", "error": str(ex)}
+            return (
+                "500 Internal Server Error",
+                {
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Access-Control-Allow-Origin": "*",
+                },
+                json.dumps(err).encode("utf-8"),
+            )
+
+
+
+
 
     @property
     def extract_cookies(self, req, resp):
@@ -160,6 +320,8 @@ class HttpAdapter:
                     cookies[key] = value
         return cookies
 
+    def get_header_from_request(self, req):
+        return
     def get_encoding_from_headers(self, header):
         """
         Extract character encoding from HTTP headers.
@@ -189,7 +351,7 @@ class HttpAdapter:
         response = Response()
 
         # Set encoding.
-        response.encoding = get_encoding_from_headers(response.headers)
+        response.encoding = self.get_encoding_from_headers(response.headers)
         response.raw = resp
         response.reason = response.raw.reason
 
@@ -199,7 +361,7 @@ class HttpAdapter:
             response.url = req.url
 
         # Add new cookies from the server.
-        response.cookies = extract_cookies(req)
+        response.cookies = self.extract_cookies(req)
 
         # Give the Response some context.
         response.request = req
