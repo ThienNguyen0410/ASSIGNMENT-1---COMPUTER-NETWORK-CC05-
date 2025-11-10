@@ -2,9 +2,6 @@
 import json
 from daemon import*
 
-
-def create_sampleapp():
-    return
 app = WeApRous()
 
 @app.route("/", methods=["GET"])
