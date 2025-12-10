@@ -3,10 +3,298 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat application</title>
+    <title>Chat Application</title>
     <link rel="stylesheet" href="/static/css/chatstyle.css">
+    <meta name="referrer" content="no-referrer">
 </head>
 <body>
-    
+    <div class="app">
+        <!-- Header with auth -->
+        <header class="top-bar">
+            <div class="logo-section">
+                <h1>💬 ChatApp</h1>
+            </div>
+            <div class="auth-controls">
+                <input id="username" type="text" placeholder="Username" class="auth-input" />
+                <input id="password" type="password" placeholder="Password" class="auth-input" />
+                <button id="btnLogin" class="btn-primary">Login</button>
+            </div>
+        </header>
+
+        <main class="main-container">
+            <!-- Left Sidebar: People & Channels -->
+            <aside class="sidebar">
+                <!-- Account Info -->
+                <div class="account-card">
+                    <div class="avatar-lg">👤</div>
+                    <div class="account-info">
+                        <div id="currentUser" class="user-name">Guest</div>
+                        <small id="onlineStatus" class="status">Offline</small>
+                    </div>
+                </div>
+
+                <!-- Register Peer Section -->
+                <section class="card">
+                    <h3>Register</h3>
+                    <input id="peerIp" type="text" placeholder="IP Address" class="input" />
+                    <input id="peerPort" type="text" placeholder="Port" class="input" />
+                    <button id="btnRegister" class="btn-secondary">Register as Peer</button>
+                </section>
+
+                <!-- Contacts/Peers -->
+                <section class="card">
+                    <div class="section-header">
+                        <h3>Contacts</h3>
+                        <button id="btnRefreshPeers" class="btn-icon" title="Refresh">🔄</button>
+                    </div>
+                    <ul id="peerList" class="peer-list"></ul>
+                </section>
+
+                <!-- Channels -->
+                <section class="card">
+                    <h3>Channels</h3>
+                    <div class="input-group">
+                        <input id="channelName" type="text" placeholder="Channel name" class="input" />
+                        <button id="btnJoinChannel" class="btn-secondary">Join</button>
+                    </div>
+                    <button id="btnViewChannels" class="btn-secondary full-width">View All Channels</button>
+                    <pre id="channelsView" class="channels-view"></pre>
+                </section>
+            </aside>
+
+            <!-- Chat Area -->
+            <section class="chat-container">
+                <!-- Chat Header -->
+                <div class="chat-header">
+                    <div class="chat-info">
+                        <div id="chatTitle" class="chat-name">Select a contact</div>
+                        <small id="chatStatus" class="chat-status">--</small>
+                    </div>
+                    <div class="chat-actions">
+                        <button class="btn-icon" title="Call">📞</button>
+                        <button class="btn-icon" title="Video">📹</button>
+                        <button class="btn-icon" title="Info">ℹ️</button>
+                    </div>
+                </div>
+
+                <!-- Messages Area -->
+                <div id="messagesArea" class="messages-area">
+                    <div class="welcome-message">
+                        <div class="welcome-icon">💭</div>
+                        <p>Welcome to ChatApp! Select a contact or channel to start messaging.</p>
+                    </div>
+                </div>
+
+                <!-- Compose Area -->
+                <div class="compose-area">
+                    <div class="compose-controls">
+                        <button class="btn-icon" title="Attach">📎</button>
+                        <button class="btn-icon" title="Emoji">😊</button>
+                    </div>
+                    <input id="messageInput" type="text" placeholder="Type a message..." class="message-input" />
+                    <button id="btnSend" class="btn-send">Send</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // API helpers
+        const api = {
+            post: async (path, data) => {
+                try {
+                    const res = await fetch(path, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    try { return await res.json(); } catch(e) { return { text: await res.text() } }
+                } catch (e) { return { error: String(e) } }
+            },
+            get: async (path) => {
+                try {
+                    const res = await fetch(path);
+                    try { return await res.json(); } catch(e) { return { text: await res.text() } }
+                } catch (e) { return { error: String(e) } }
+            }
+        };
+
+        // DOM shortcuts
+        const $ = id => document.getElementById(id);
+        let currentTarget = null;
+        let messageHistory = {}; // { target: [{ sender, text, time }] }
+
+        // Add message to UI
+        function addMessage(sender, text, isOwn = false) {
+            const area = $('messagesArea');
+            if (!messageHistory[currentTarget]) {
+                messageHistory[currentTarget] = [];
+            }
+            messageHistory[currentTarget].push({ sender, text, time: new Date(), isOwn });
+            
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble ${isOwn ? 'own' : 'other'}`;
+            bubble.innerHTML = `
+                <div class="message-sender">${sender}</div>
+                <div class="message-text">${escapeHtml(text)}</div>
+                <small class="message-time">${new Date().toLocaleTimeString()}</small>
+            `;
+            area.appendChild(bubble);
+            area.scrollTop = area.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderMessages() {
+            const area = $('messagesArea');
+            area.innerHTML = '';
+            if (!currentTarget) {
+                area.innerHTML = '<div class="welcome-message"><div class="welcome-icon">💭</div><p>Select a contact to start messaging.</p></div>';
+                return;
+            }
+            const msgs = messageHistory[currentTarget] || [];
+            msgs.forEach(m => {
+                const bubble = document.createElement('div');
+                bubble.className = `message-bubble ${m.isOwn ? 'own' : 'other'}`;
+                bubble.innerHTML = `
+                    <div class="message-sender">${m.sender}</div>
+                    <div class="message-text">${escapeHtml(m.text)}</div>
+                    <small class="message-time">${m.time.toLocaleTimeString()}</small>
+                `;
+                area.appendChild(bubble);
+            });
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // Auth
+        async function login() {
+            const username = $('username').value.trim();
+            const password = $('password').value;
+            if (!username) { alert('Enter username'); return; }
+            const r = await api.post('/login', { username, password });
+            if (r.status === 'success') {
+                $('currentUser').textContent = username;
+                $('onlineStatus').textContent = '🟢 Online';
+                addSystemMessage(`✓ Logged in as ${username}`);
+            } else {
+                addSystemMessage(`✗ Login failed: ${r.message || 'Unknown error'}`);
+            }
+        }
+
+        function addSystemMessage(text) {
+            const area = $('messagesArea');
+            const msg = document.createElement('div');
+            msg.className = 'system-message';
+            msg.textContent = text;
+            area.appendChild(msg);
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // Register
+        async function registerPeer() {
+            const name = $('username').value.trim();
+            const ip = $('peerIp').value.trim() || '127.0.0.1';
+            const port = parseInt($('peerPort').value.trim() || '9001', 10);
+            if (!name) { alert('Set username first'); return; }
+            const r = await api.post('/add-list/', { name, ip, port });
+            if (r.status === 'ok') {
+                addSystemMessage(`✓ Registered as ${name} on ${ip}:${port}`);
+                await refreshPeers();
+            } else {
+                addSystemMessage(`✗ Registration failed`);
+            }
+        }
+
+        // Peers
+        async function refreshPeers() {
+            const r = await api.get('/get-list/');
+            if (r && r.peers) {
+                const list = $('peerList');
+                list.innerHTML = '';
+                for (const [name, info] of Object.entries(r.peers)) {
+                    const li = document.createElement('li');
+                    li.className = 'peer-item';
+                    li.innerHTML = `
+                        <div class="avatar">👤</div>
+                        <div class="peer-info">
+                            <div class="peer-name">${name}</div>
+                            <small class="peer-addr">${info.ip}:${info.port}</small>
+                        </div>
+                    `;
+                    li.addEventListener('click', () => selectPeer(name));
+                    list.appendChild(li);
+                }
+            }
+        }
+
+        function selectPeer(name) {
+            currentTarget = name;
+            $('chatTitle').textContent = name;
+            $('chatStatus').textContent = '✓ Online';
+            renderMessages();
+        }
+
+        // Send
+        async function sendMessage() {
+            const sender = $('username').value.trim();
+            if (!sender) { alert('Login first'); return; }
+            const msg = $('messageInput').value.trim();
+            if (!msg) return;
+
+            if (!currentTarget) {
+                alert('Select a peer first');
+                return;
+            }
+
+            addMessage(sender, msg, true);
+            
+            const r = await api.post('/send-peer/', { sender, target: currentTarget, msg });
+            if (r.status !== 'ok') {
+                addSystemMessage(`✗ Failed to send: ${r.msg}`);
+            }
+            $('messageInput').value = '';
+        }
+
+        // Channels
+        async function joinChannel() {
+            const peer = $('username').value.trim();
+            const channel = $('channelName').value.trim();
+            if (!peer || !channel) { alert('Enter username and channel'); return; }
+            const r = await api.post('/join-channel/', { peer, channel });
+            if (r.status === 'ok') {
+                addSystemMessage(`✓ Joined ${channel}`);
+            } else {
+                addSystemMessage(`✗ Failed to join channel`);
+            }
+        }
+
+        async function viewChannels() {
+            const r = await api.get('/view-channels/');
+            $('channelsView').textContent = JSON.stringify(r, null, 2);
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            $('btnLogin').addEventListener('click', login);
+            $('btnRegister').addEventListener('click', registerPeer);
+            $('btnRefreshPeers').addEventListener('click', refreshPeers);
+            $('btnSend').addEventListener('click', sendMessage);
+            $('btnJoinChannel').addEventListener('click', joinChannel);
+            $('btnViewChannels').addEventListener('click', viewChannels);
+            $('messageInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+
+            // Initial load
+            refreshPeers();
+            setInterval(refreshPeers, 5000);
+        });
+    </script>
+</body>
+</html>
 </body>
 </html>

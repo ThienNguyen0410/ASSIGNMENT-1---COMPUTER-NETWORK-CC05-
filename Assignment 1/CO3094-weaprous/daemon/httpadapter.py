@@ -165,7 +165,7 @@ class HttpAdapter:
             
                 auth =  req.cookies.get("auth")
 
-                if req.path in ("/", "/index.html") and auth != "true":
+                if req.path in ("/", "/index.html") and auth != "true" or (req.path == "/peer" and auth != "true"):
                     status = "401 Unauthorized"
                     headers = {"Content-Type": "text/html; charset=utf-8"}
                     body = (
@@ -215,7 +215,6 @@ class HttpAdapter:
                             "<p>The requested page could not be found.</p>"
                             "</body></html>"
                         )
-                        print("PATH: " + str(filepath))
             if hasattr(req,"hook") and req.hook:
                 status, headers, body_bytes = self.handle_weaprous(req, resp)
                 body = body_bytes  # Replace body with hook result
