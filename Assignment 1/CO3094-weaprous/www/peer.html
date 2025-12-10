@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peer Chat Application</title>
+    <link rel="stylesheet" href="peer.css">
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- User Profile Section -->
+            <div class="user-profile">
+                <div class="avatar">👤</div>
+                <div class="user-info">
+                    <h3 id="username-display">Not logged in</h3>
+                    <span class="status online">● Online</span>
+                </div>
+                <button class="btn-logout" id="btnLogout" title="Logout">🚪</button>
+            </div>
+
+            <!-- Login Section (hidden after login) -->
+            <div id="login-section" class="login-section">
+                <h3>Login</h3>
+                <input type="text" id="username" placeholder="Username (admin)" class="input-field">
+                <input type="password" id="password" placeholder="Password (password)" class="input-field">
+                <button onclick="login()" class="btn-primary">Login</button>
+            </div>
+
+            <!-- Main Content (hidden before login) -->
+            <div id="main-content" class="main-content" style="display: none;">
+                <!-- Search/Filter -->
+                <input type="text" id="search-input" placeholder="Search contacts..." class="input-field search-box">
+
+                <!-- Channels Section -->
+                <div class="section">
+                    <div class="section-header">
+                        <h4>📺 Channels</h4>
+                        <button class="btn-icon" id="btnViewChannels" title="View all channels">+</button>
+                    </div>
+                    <div id="channels-list" class="contacts-list"></div>
+                </div>
+
+                <!-- Direct Contacts Section -->
+                <div class="section">
+                    <div class="section-header">
+                        <h4>👥 Contacts</h4>
+                        <button class="btn-icon" id="btnRefresh" title="Refresh">🔄</button>
+                    </div>
+                    <div id="contacts-list" class="contacts-list"></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="contact-header">
+                    <div class="avatar-small">💬</div>
+                    <div class="contact-info">
+                        <h2 id="chat-contact-name">Select a contact to start chatting</h2>
+                        <span id="chat-contact-type" class="contact-type"></span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" id="btnGroupChat" title="Group Chat" style="display: none;">👥</button>
+                    <button class="btn-icon" id="btnCall" title="Voice Call">📞</button>
+                    <button class="btn-icon" id="btnVideo" title="Video Call">📹</button>
+                </div>
+            </div>
+
+            <!-- Messages Area -->
+            <div id="messages-container" class="messages-container">
+                <div class="messages-empty">
+                    <div class="empty-icon">💬</div>
+                    <p>Select a contact to start chatting</p>
+                </div>
+            </div>
+
+            <!-- Message Input -->
+            <div class="message-compose">
+                <div class="compose-toolbar">
+                    <button class="btn-icon-small" title="Attach file">📎</button>
+                    <button class="btn-icon-small" title="Emoji">😊</button>
+                </div>
+                <input type="text" id="message-input" placeholder="Type a message..." class="input-field message-field">
+                <button id="btn-send" class="btn-send">Send</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Channels Modal -->
+    <div id="channels-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Available Channels</h2>
+                <button class="btn-close" onclick="closeChannelsModal()">✕</button>
+            </div>
+            <div id="all-channels-list" class="channels-grid"></div>
+        </div>
+    </div>
+
+    <!-- Notifications -->
+    <div id="notification" class="notification"></div>
+
+    <script src="peer.js"></script>
+</body>
+</html>
